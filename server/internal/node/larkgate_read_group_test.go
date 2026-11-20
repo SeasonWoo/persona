@@ -12,32 +12,45 @@ import (
 // What /read asks the assistant to run (#11803, assistant/feishu_read.go, prompts/bot/read_group.md): read a group as
 // the user and download its images and files into a directory of their own. lark-cli rates the resource download
 // "Risk: write" (it writes a local file), so the gate reads it as a read: none of these may raise a Lark card. Ids are
-// placeholders. A subshell (`( cd … && lark-cli … )`) stays opaque to the gate and asks, so the prompt does not use one.
+// placeholders. A single download names its file in lark-im-resources/ with --output (larkCLISafeDownload).
+// A subshell (`( cd … && lark-cli … )`) stays opaque to the gate and asks, so the prompt does not use one.
 var larkReadGroupCommands = []struct{ name, command string }{
 	{"list and download after cd", `mkdir -p ~/.persona/lark-read/om_1 && cd ~/.persona/lark-read/om_1 && lark-cli im +chat-messages-list --chat-id oc_1 --page-size 40 --no-reactions --download-resources`},
 	{"a range, to a file", `mkdir -p ~/.persona/lark-read/om_1 && cd ~/.persona/lark-read/om_1 && lark-cli im +chat-messages-list --chat-id oc_1 --start 2026-11-18T00:00:00+08:00 --order asc --page-all --page-limit 10 --page-size 50 --no-reactions --download-resources > messages.json`},
 	{"a topic's messages", `cd ~/.persona/lark-read/om_1 && lark-cli im +threads-messages-list --thread omt_1 --page-size 50 --download-resources`},
-	{"one image", `cd ~/.persona/lark-read/om_1 && lark-cli im +messages-resources-download --message-id om_2 --file-key img_v3_x --type image --output img_v3_x.jpg`},
-	{"one file", `lark-cli im +messages-resources-download --message-id om_3 --file-key file_v3_y --type file`},
-	{"files in a loop", `cd ~/.persona/lark-read/om_1 && for k in file_v3_a file_v3_b; do lark-cli im +messages-resources-download --message-id om_3 --file-key $k --type file; echo "$k exit=$?"; done`},
+	{"one image", `cd ~/.persona/lark-read/om_1 && lark-cli im +messages-resources-download --message-id om_2 --file-key img_v3_x --type image --output lark-im-resources/img_v3_x.jpg`},
+	{"one file", `lark-cli im +messages-resources-download --message-id om_3 --file-key file_v3_y --type file --output=lark-im-resources/file_v3_y`},
+	{"files in a loop", `cd ~/.persona/lark-read/om_1 && for k in file_v3_a file_v3_b; do lark-cli im +messages-resources-download --message-id om_3 --file-key $k --type file --output lark-im-resources/$k; echo "$k exit=$?"; done`},
 }
 
-// The download's own risk, as lark-cli 1.0.91 prints it: a read for the gate, whatever lark-cli says or does not say;
-// a high-risk rating is left as it is.
+// The download's own risk, as lark-cli 1.0.91 prints it ("write", or none when it cannot be asked): a read for the gate
+// only when --output names a plain file in lark-im-resources/. lark-cli overwrites an existing file and takes a dotfile
+// name, and without --output the file is named by the sender, so anything else stays a write; a high-risk rating too.
 func TestLarkCLIResourceDownloadIsRead(t *testing.T) {
+	const dl = `lark-cli im +messages-resources-download --message-id om_1 --file-key img_v3_x --type image`
 	for _, risk := range []string{"write", ""} {
-		v := classifyLark(`lark-cli im +messages-resources-download --message-id om_1 --file-key img_v3_x --type image`, nil, "", func([]string) string { return risk })
-		if len(v.calls) != 1 || v.calls[0].Risk != "read" || v.cliWrite {
-			t.Fatalf("risk %q: verdict = %+v", risk, v)
+		for _, out := range []string{" --output lark-im-resources/img_v3_x.jpg", " --output=lark-im-resources/a-b_c.v2.png", " --output x.png --output lark-im-resources/x.png"} {
+			v := classifyLark(dl+out, nil, "", func([]string) string { return risk })
+			if len(v.calls) != 1 || v.calls[0].Risk != "read" || v.cliWrite {
+				t.Fatalf("risk %q, %q: verdict = %+v", risk, out, v)
+			}
+		}
+		for _, out := range []string{"", " --output img.png", " --output .zshrc", " --output lark-im-resources/.zshrc",
+			" --output lark-im-resources/../.zshrc", " --output lark-im-resources/a/b.png", " --output ../lark-im-resources/x.png",
+			" --output lark-im-resources/", " --output lark-im-resources/x.png --output .bashrc", " --output lark-im-resources/x.png --output"} {
+			v := classifyLark(dl+out, nil, "", func([]string) string { return risk })
+			if len(v.calls) != 1 || v.calls[0].Risk == "read" || !v.cliWrite {
+				t.Fatalf("risk %q, %q: verdict = %+v, want a write", risk, out, v)
+			}
 		}
 	}
-	v := classifyLark(`lark-cli im +messages-resources-download --message-id om_1 --file-key img_v3_x --type image`, nil, "", func([]string) string { return "high-risk-write" })
+	v := classifyLark(dl+" --output lark-im-resources/x.png", nil, "", func([]string) string { return "high-risk-write" })
 	if len(v.calls) != 1 || v.calls[0].Risk != "high-risk-write" {
 		t.Fatalf("a high-risk rating: verdict = %+v", v)
 	}
 	// Other downloads and the writes next to it stay writes.
 	for _, cmd := range []string{
-		`lark-cli drive +download --file-token AAA`,
+		`lark-cli drive +download --file-token AAA --output lark-im-resources/x`,
 		`lark-cli im +messages-send --chat-id oc_1 --text hi`,
 		`lark-cli im +messages-resources-upload --file a.png`,
 	} {

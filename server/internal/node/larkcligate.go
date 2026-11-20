@@ -47,10 +47,14 @@ var (
 	larkCLIReadVerbs      = map[string]bool{"fetch": true, "agenda": true, "search": true, "list": true, "get": true, "mget": true}
 	larkCLILeadReadVerbs  = map[string]bool{"get": true, "list": true}
 	larkCLIMethodReadVerb = map[string]bool{"list": true, "get": true, "search": true, "mget": true, "batch_get": true}
-	// larkCLILocalDownloads save what a message carries (an image, a file) to a relative path under the current
-	// directory and change nothing on Lark, though lark-cli rates them "Risk: write" (lark-cli 1.0.91): /read downloads
-	// a group's images and files with them (#11803). Only an ordinary write is read as a read: a high-risk one is not.
+	// larkCLILocalDownloads save what a message carries (an image, a file) under the current directory and change
+	// nothing on Lark, though lark-cli rates them "Risk: write" (lark-cli 1.0.91): /read downloads a group's images
+	// and files with them (#11803). lark-cli overwrites an existing file and takes a dotfile name, and without --output
+	// the name is the sender's (Content-Disposition), so one is a read only when --output names a plain file in
+	// lark-im-resources/ (larkCLIDownloadOutput, the directory --download-resources uses), and only for an ordinary
+	// write rating: a high-risk one is not.
 	larkCLILocalDownloads = map[string]bool{"im/+messages-resources-download": true}
+	larkCLIDownloadOutput = lazyre.New(`^lark-im-resources/[A-Za-z0-9_][A-Za-z0-9._-]{0,199}$`)
 	larkCLIRead           = map[string]bool{"schema": true, "skills": true, "whoami": true, "doctor": true, "help": true, "completion": true}
 	larkCLIAuthRead       = map[string]bool{"status": true, "check": true, "scopes": true, "list": true}
 	larkCLIEventRead      = map[string]bool{"list": true, "schema": true, "status": true}
@@ -159,7 +163,7 @@ func parseLarkCLI(args []string, risk larkRisk) (c larkCall, deny string, ok boo
 		if c.Risk == "" && (larkCLIKnownReads[strings.Join(words, "/")] || larkCLINamedRead(words)) {
 			c.Risk = "read"
 		}
-		if (c.Risk == "" || c.Risk == "write") && larkCLILocalDownloads[strings.Join(words, "/")] {
+		if (c.Risk == "" || c.Risk == "write") && larkCLILocalDownloads[strings.Join(words, "/")] && larkCLISafeDownload(flags) {
 			c.Risk = "read"
 		}
 	}
@@ -186,6 +190,13 @@ func larkCLINamedRead(words []string) bool {
 		}
 	}
 	return len(words) >= 3 && larkCLIMethodReadVerb[last]
+}
+
+// larkCLISafeDownload: a download's --output (the value pflag takes, the last one) names a plain file in
+// lark-im-resources/, nowhere else and no dotfile.
+func larkCLISafeDownload(flags []string) bool {
+	out := flagValue(flags, "--output")
+	return out != "" && !strings.Contains(out, "..") && larkCLIDownloadOutput.MatchString(out)
 }
 
 // cliRead: a lark-cli call that only reads (its own risk level, or a GET through `lark-cli api`).

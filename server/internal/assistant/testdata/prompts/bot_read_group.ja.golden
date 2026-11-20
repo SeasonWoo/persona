@@ -6,7 +6,7 @@
 1. ユーザーとして lark-cli でグループを読みます（読んでも既読にはなりません）。範囲の指定がなければ、ほかのメンバーやボットの発言も含めて直近 40 件を読みます：
    mkdir -p ~/.persona/lark-read/om_example && cd ~/.persona/lark-read/om_example && lark-cli im +chat-messages-list --chat-id oc_example --page-size 40 --no-reactions --download-resources
    依頼に範囲があれば（直近 2 日、全部、特定の人だけなど）、それに合うオプションに置き換えます（--start / --end は ISO 8601、--order asc、--page-all --page-limit など）。ただし多くても 500 件までにし、超えたら 500 件で止めて、何件をいつから読んだかを回答に書いてください。範囲が広いときは --download-resources を付けずにまず一覧を読み、必要な画像とファイルだけを下の方法で 1 つずつ取ります。読み終えたら元のディレクトリに戻ってください（cd -）。
-2. 画像と添付ファイルは ~/.persona/lark-read/om_example に保存します。--download-resources は ~/.persona/lark-read/om_example/lark-im-resources/ に置きます。1 つだけ取るときは cd ~/.persona/lark-read/om_example && lark-cli im +messages-resources-download --message-id <message_id> --file-key <key> --type image|file を使います（--output は相対パスのみ）。サブシェル「( … )」は使わないでください。1 ファイル 50 MB を超えるもの、合計 200 MB を超えた分はダウンロードせず、回答でどれを取らなかったか書いてください。
+2. 画像と添付ファイルは ~/.persona/lark-read/om_example に保存します。--download-resources は ~/.persona/lark-read/om_example/lark-im-resources/ に置きます。1 つだけ取るときは cd ~/.persona/lark-read/om_example && lark-cli im +messages-resources-download --message-id <message_id> --file-key <key> --type image|file --output lark-im-resources/<key> を使います（--output は必ず lark-im-resources/ の中のファイル名にします。ほかの場所は確認が必要になります）。サブシェル「( … )」は使わないでください。1 ファイル 50 MB を超えるもの、合計 200 MB を超えた分はダウンロードせず、回答でどれを取らなかったか書いてください。
 3. 画像は画像を見られるツールで直接見ます（多くても 20 枚、依頼に関係が深く新しいものから）。添付ファイルは種類に合わせて読みます（テキストやログはそのまま、表や PDF は中身を、圧縮ファイルはまず一覧を）。
 4. lark-cli がない、ログインしていない、権限が足りないときは、larkcli_messages ツールで文字だけでも読み、画像と添付ファイルを読めなかったことと理由を回答に書いてください。
 
