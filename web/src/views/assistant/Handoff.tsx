@@ -35,21 +35,24 @@ export function whyNotStarted(todo: Todo, plans: Record<string, TaskPlan>): stri
  *  linked later (a new Agent after every one stopped, #4754; a plan that continues the to-do, #11854) has its own card
  *  where that happened. */
 const SAME_HANDOFF_MS = 120_000;
-/** How long before its feed line an Agent may be linked and still be that line's: a task line is written just after the
- *  link (agent_start, a takeover), a plan line long before its Agents start. */
-const ANCHOR_SLACK_MS = 30_000;
+/** How long before a standalone task line an Agent may be linked and still be that line's: the line is written just
+ *  after the link (agent_start, a takeover). A plan line takes none: it is written before its Agents start, so an Agent
+ *  linked before it is an earlier hand-off's (a previous continuation's, however recent). */
+export const TASK_LINE_SLACK_MS = 30_000;
 
 /** The Agents a card stands for (#11854). `since`: the time of the card's feed line, which anchors it to the first
  *  Agents linked from then on, so a card under an older message keeps the Agents that started then and one under the
  *  newest plan has the plan's own, never an older one while its Agent is starting (none, and the card says so).
  *  Without an anchor (or with nothing linked since, for a task that took over a running Agent or a plan a later one
- *  continued): the newest batch still linked, else the Agent released last. */
-export function handoffAgents(agents: TodoAgent[], since?: string, fallback = true): TodoAgent[] {
+ *  continued): the newest batch still linked, else the Agent released last. `slack`: how long before `since` an Agent
+ *  may be linked and still count (TASK_LINE_SLACK_MS for a task line; none for a plan line, so a previous
+ *  continuation's Agent linked just before the plan never stands in for the plan's own). */
+export function handoffAgents(agents: TodoAgent[], since?: string, fallback = true, slack = 0): TodoAgent[] {
   const started = agents.filter((a) => !a.start_error);
   const at = (a: TodoAgent) => Date.parse(a.linked_at);
   const anchor = since ? Date.parse(since) : NaN;
   if (Number.isFinite(anchor) && started.every((a) => Number.isFinite(at(a)))) {
-    const after = started.filter((a) => at(a) >= anchor - ANCHOR_SLACK_MS);
+    const after = started.filter((a) => at(a) >= anchor - slack);
     if (after.length > 0) {
       const first = Math.min(...after.map(at));
       return after.filter((a) => at(a) - first <= SAME_HANDOFF_MS);
@@ -91,10 +94,11 @@ export interface Handoff {
  *  why it did not start, or gone (removed since). `planned`: the plan's task, for its title and error before the to-do
  *  arrives (or after it was removed); `superseded`: a later plan continues its to-do, so with no Agent of its own the
  *  card shows the to-do's latest rather than starting for ever. `loaded`: the to-do list is in, so a to-do it lacks is
- *  gone rather than on its way. `since`: the card's feed line's time. */
-export function taskHandoffs(todo: Todo | undefined, planned: { key: string; title: string; error?: string; todoId?: string; superseded?: boolean } | undefined, wake: HandoffWake, plans: Record<string, TaskPlan>, loaded = true, since?: string): Handoff[] {
+ *  gone rather than on its way. `since`: the card's feed line's time; `slack`: how long before it its Agents may be linked
+ *  (TASK_LINE_SLACK_MS for a standalone task line, none for a plan's). */
+export function taskHandoffs(todo: Todo | undefined, planned: { key: string; title: string; error?: string; todoId?: string; superseded?: boolean } | undefined, wake: HandoffWake, plans: Record<string, TaskPlan>, loaded = true, since?: string, slack = 0): Handoff[] {
   // a task made of a running Agent, or resumed: its Agent may be linked before the line; one a plan started never is
-  const shown = handoffAgents(todo?.agents ?? [], since, wake !== "created" || Boolean(planned?.superseded));
+  const shown = handoffAgents(todo?.agents ?? [], since, wake !== "created" || Boolean(planned?.superseded), slack);
   if (todo && shown.length > 0) {
     return shown.map((a) => ({ key: `${a.machine_id}/${a.session_id}`, title: todo.title, wake, mid: a.machine_id, sid: a.session_id, agentTitle: a.title, todo: todo.id }));
   }
