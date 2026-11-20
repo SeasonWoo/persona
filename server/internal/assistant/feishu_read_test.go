@@ -159,7 +159,9 @@ func TestFeishuReadDropsEverythingElse(t *testing.T) {
 			c, _ := json.Marshal(map[string]string{"text": "@_user_1 /reader 看下"})
 			ev.Message.Content = string(c)
 		}},
-		{"a picture", func(_ *threadEnv, ev *feishubot.MessageEvent) { ev.Message.MessageType, ev.Message.Content = "image", `{}` }},
+		{"a picture", func(_ *threadEnv, ev *feishubot.MessageEvent) {
+			ev.Message.MessageType, ev.Message.Content = "image", `{}`
+		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			e := readEnv(t)
