@@ -234,8 +234,8 @@ func (s *Service) interactionPlace(ix proto.Interaction) (reply string, to feish
 // asked in a topic, of the conversation it belongs to (either may be nil).
 func (s *Service) interactionRuns(ix proto.Interaction) (private, topic *channel.Run) {
 	for _, r := range s.channelRuns(channel.Feishu) {
-		if r.MachineID != ix.MachineID || r.SessionID != ix.SessionID {
-			continue
+		if r.MachineID != ix.MachineID || r.SessionID != ix.SessionID || readRun(s.runExts(&r, readChatKey)) {
+			continue // a /read's group gets its answer and nothing else: its questions go to the private chat
 		}
 		if runTo(s.runExts(&r, "chat", "thread")).ChatID == "" {
 			if private == nil || !r.Started.Before(private.Started) {

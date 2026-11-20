@@ -129,6 +129,7 @@ const (
 	CodeFeishuAPI         = assistantwire.CodeFeishuAPI
 	CodeChatDenied        = assistantwire.CodeChatDenied
 	FeishuFromElsewhere   = assistantwire.FeishuFromElsewhere
+	FeishuFromRead        = assistantwire.FeishuFromRead
 	FeishuReact           = assistantwire.FeishuReact
 	FeishuUnreact         = assistantwire.FeishuUnreact
 	FeishuMessages        = assistantwire.FeishuMessages

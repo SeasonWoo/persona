@@ -47,6 +47,10 @@ var (
 	larkCLIReadVerbs      = map[string]bool{"fetch": true, "agenda": true, "search": true, "list": true, "get": true, "mget": true}
 	larkCLILeadReadVerbs  = map[string]bool{"get": true, "list": true}
 	larkCLIMethodReadVerb = map[string]bool{"list": true, "get": true, "search": true, "mget": true, "batch_get": true}
+	// larkCLILocalDownloads save what a message carries (an image, a file) to a relative path under the current
+	// directory and change nothing on Lark, though lark-cli rates them "Risk: write" (lark-cli 1.0.91): /read downloads
+	// a group's images and files with them (#11803). Only an ordinary write is read as a read: a high-risk one is not.
+	larkCLILocalDownloads = map[string]bool{"im/+messages-resources-download": true}
 	larkCLIRead           = map[string]bool{"schema": true, "skills": true, "whoami": true, "doctor": true, "help": true, "completion": true}
 	larkCLIAuthRead       = map[string]bool{"status": true, "check": true, "scopes": true, "list": true}
 	larkCLIEventRead      = map[string]bool{"list": true, "schema": true, "status": true}
@@ -153,6 +157,9 @@ func parseLarkCLI(args []string, risk larkRisk) (c larkCall, deny string, ok boo
 			c.Risk = risk(words)
 		}
 		if c.Risk == "" && (larkCLIKnownReads[strings.Join(words, "/")] || larkCLINamedRead(words)) {
+			c.Risk = "read"
+		}
+		if (c.Risk == "" || c.Risk == "write") && larkCLILocalDownloads[strings.Join(words, "/")] {
 			c.Risk = "read"
 		}
 	}
