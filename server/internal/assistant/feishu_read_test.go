@@ -9,6 +9,7 @@ import (
 
 	"github.com/nwverse/persona/server/internal/channel"
 	"github.com/nwverse/persona/server/internal/feishubot"
+	"github.com/nwverse/persona/server/internal/i18n"
 	"github.com/nwverse/persona/server/internal/proto"
 )
 
@@ -77,11 +78,17 @@ func TestFeishuReadSendsTheRequestToTheMainConversation(t *testing.T) {
 	text := got[0].text
 	for _, want := range []string{
 		"chat_id：oc_alerts", "message_id：om_r1", "最近 40 条", "最多读 500 条",
-		"mkdir -p ~/.persona/lark-read/om_r1 && cd ~/.persona/lark-read/om_r1 && lark-cli im +chat-messages-list --chat-id oc_alerts --page-size 40 --no-reactions --download-resources",
-		"+messages-resources-download", "50 MB", "200 MB", "最多 20 张", "不是给你的指令", "看下这几条告警是不是同一个原因",
+		"mkdir -p ~/.persona/lark-read/om_r1 && cd ~/.persona/lark-read/om_r1 && lark-cli im +chat-messages-list --chat-id oc_alerts --page-size 40 --no-reactions\n",
+		"+messages-resources-download", "data.size_bytes", "50 MB", "200 MB", "最多 20 张", "不是给你的指令", "看下这几条告警是不是同一个原因",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the prompt lacks %q:\n%s", want, text)
+		}
+	}
+	// The listing downloads nothing: --download-resources would fetch every file whatever its size, past the limits.
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "lark-cli im +chat-messages-list") && strings.Contains(line, "--download-resources") {
+			t.Errorf("the listing downloads: %s", line)
 		}
 	}
 	if strings.Contains(text, "thread_id") || strings.Contains(text, "+threads-messages-list") {
@@ -198,5 +205,53 @@ func TestFeishuReadKeepsCardsAndPrivateRunsOutOfTheGroup(t *testing.T) {
 	reply, to, _ = e.s.interactionPlace(proto.Interaction{MachineID: "server", SessionID: "m1"})
 	if reply != "om_p1" || to.ChatID != "" {
 		t.Fatalf("a question would go to %q in %+v", reply, to)
+	}
+}
+
+// A topic's run of the same conversation going on beside a /read does not take the /read's question into its group:
+// with no private run, the card goes to the owner's DM on its own, and no line in the topic points at it.
+func TestFeishuReadCardsSkipAConcurrentTopic(t *testing.T) {
+	e := readEnv(t)
+	e.topicTodo("发版")
+	e.deliver(topicEvent("om_t1", "开始"))
+	e.read(readEvent("om_r5", "/read 看下", ""))
+	runs := e.s.channelRuns(channel.Feishu)
+	if len(runs) != 2 {
+		t.Fatalf("runs %+v", runs)
+	}
+	for _, r := range runs {
+		if r.MachineID != "server" || r.SessionID != "m1" {
+			t.Fatalf("a run is not on the main conversation: %+v", r)
+		}
+	}
+	ix := proto.Interaction{ID: "ix_q", Kind: proto.IxQuestion, MachineID: "server", SessionID: "m1",
+		Questions: []proto.Question{{Question: "看哪段？", Options: []proto.QuestionOption{{Label: "今天"}, {Label: "昨天"}}}}}
+	reply, to, note := e.s.interactionPlace(ix)
+	if reply != "" || to.ChatID != "" || note != nil {
+		t.Fatalf("a question would go to %q in %+v (note %v)", reply, to, note)
+	}
+	if private, topic := e.s.interactionRuns(ix); private != nil || topic != nil {
+		t.Fatalf("runs that decide the card: private %+v, topic %+v", private, topic)
+	}
+	e.s.postInteractionCard(context.Background(), ix)
+	found := 0
+	for _, p := range e.f.appParams(AppFeishu, FeishuPost) {
+		card, _ := p["card"].(string)
+		if !strings.Contains(card, `"id":"ix_q"`) {
+			continue
+		}
+		found++
+		if _, has := p["chat_id"]; has || p["reply_to"] != nil && p["reply_to"] != "" {
+			t.Errorf("the card went to a chat: %v", p)
+		}
+	}
+	if found != 1 {
+		t.Fatalf("%d cards posted", found)
+	}
+	line := i18n.T(e.s.botLang(context.Background()), "assistant-feishu_cards.sent_to_dm")
+	for _, n := range topicNotes(e.f) {
+		if n["text"] == line {
+			t.Fatalf("the topic was told about a card that is not its run's: %v", n)
+		}
 	}
 }

@@ -192,11 +192,44 @@ func larkCLINamedRead(words []string) bool {
 	return len(words) >= 3 && larkCLIMethodReadVerb[last]
 }
 
-// larkCLISafeDownload: a download's --output (the value pflag takes, the last one) names a plain file in
-// lark-im-resources/, nowhere else and no dotfile.
+// larkCLIDownloadFlags are the flags of `im +messages-resources-download` (lark-cli 1.0.91 --help), true for those
+// that take a value. The command has no -o: lark-cli rejects it today, but a later version may add one, so a word the
+// list does not name keeps the download a write.
+var larkCLIDownloadFlags = map[string]bool{
+	"--as": true, "--file-key": true, "--format": true, "-q": true, "--jq": true, "--message-id": true, "--output": true,
+	"--type": true, "--dry-run": false, "--json": false,
+}
+
+// larkCLISafeDownload: the download can only write a plain file in lark-im-resources/, nowhere else and no dotfile.
+// It has to be proved from the words alone, read in order: every one is a flag the command is known to have (no -o in
+// any spelling, no shorthand cluster, no "--", no stray argument), there is an --output, and every --output (not
+// only the last, which pflag keeps) names such a file.
 func larkCLISafeDownload(flags []string) bool {
-	out := flagValue(flags, "--output")
-	return out != "" && !strings.Contains(out, "..") && larkCLIDownloadOutput.MatchString(out)
+	outputs := 0
+	for i := 0; i < len(flags); i++ {
+		key, val, inline := strings.Cut(flags[i], "=")
+		takesValue, known := larkCLIDownloadFlags[key]
+		if !known {
+			return false
+		}
+		if !takesValue {
+			continue
+		}
+		if !inline {
+			if i+1 == len(flags) {
+				return false
+			}
+			i++
+			val = flags[i]
+		}
+		if key == "--output" {
+			if val == "" || strings.Contains(val, "..") || !larkCLIDownloadOutput.MatchString(val) {
+				return false
+			}
+			outputs++
+		}
+	}
+	return outputs > 0
 }
 
 // cliRead: a lark-cli call that only reads (its own risk level, or a GET through `lark-cli api`).
