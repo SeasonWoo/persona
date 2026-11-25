@@ -73,7 +73,7 @@ type FeishuBotSettings struct {
 	// dropped past botAISourcesKeep. Like the topic chats, the owner's: it goes when the owner does.
 	AISources []BotAISource `json:"ai_sources,omitempty"`
 	// NudgeAfter is how many minutes a card the bot sent may wait unanswered before the assistant nudges under it once
-	// (#6084, assistant/feishu_nudge.go): 0 is off, nil (never set) is assistantwire.NudgeAfterDefault.
+	// (#6084, modules/lark/nudge.go): 0 is off, nil (never set) is assistantwire.NudgeAfterDefault.
 	NudgeAfter *int `json:"nudge_after,omitempty"`
 	// SourceReportDelayMinutes is the preview window before a reply to the source group. Zero skips it.
 	SourceReportDelayMinutes *int `json:"source_report_delay_minutes,omitempty"`
@@ -118,7 +118,7 @@ type BotFeatures struct {
 	ReadGroup bool `json:"read_group"`
 	// ReadGroupDirect: a /read's answer goes straight under the owner's message in the group, as it did before #14437.
 	// Off by default, and for settings saved before it (they have no such key): the answer goes to the owner's private
-	// chat first, and into the group only when the owner presses its button (assistant/feishu_read_held.go).
+	// chat first, and into the group only when the owner presses its button (the lark module's read_held.go).
 	ReadGroupDirect bool `json:"read_group_direct"`
 }
 
@@ -200,6 +200,8 @@ type botHub struct {
 	// bindGate serializes Feishu binding, including registration network calls, independently of mu.
 	// A channel lets a waiting client's context cancel without waiting for the current bind.
 	bindGate chan struct{}
+	// sync is the user sync: the bots' apps reading as the owner every day (larksync.go).
+	sync larkSync
 }
 
 func (b *botHub) clock() time.Time {
@@ -717,6 +719,7 @@ func (h *Manager) botRoutes(api *http.ServeMux) {
 		}
 		writeJSON(w, map[string]any{"ok": true})
 	})
+	h.larkSyncRoutes(api) // the user sync: /api/v1/bots/feishu/sync…
 }
 
 // botPairCode is a new six-digit pairing code.
